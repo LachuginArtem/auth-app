@@ -1,0 +1,341 @@
+.auth-page {
+  height: 100vh;
+  background: #e9ebee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Левая часть (форма логина) */
+.login {
+  flex: 1;
+  width: 50%;
+  background-color: #fafafa;
+  height: 100%;
+  border-radius: 10px 0 0 10px;
+  text-align: center;
+  padding-top: 100px;
+}
+
+/* Правая часть (регистрация) */
+.register {
+  flex: 1;
+  width: 50%;
+  background-image: linear-gradient(135deg, #23212f 5%, #fc9d30 95%);
+  color: #fff;
+  border-radius: 0 10px 10px 0;
+  text-align: center;
+  padding: 100px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.register .register-icon {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 30px;
+}
+
+.register h2 {
+  margin: 30px 0;
+  font-size: 50px;
+  letter-spacing: 3px;
+}
+
+.register p {
+  font-size: 18px;
+  margin-bottom: 30px;
+}
+
+.register button {
+  background-color: transparent;
+  border: 1px solid #fff;
+  border-radius: 20px;
+  padding: 10px 20px;
+  color: #fff;
+  font-size: 20px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: 0.2s all ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 auto;
+}
+
+.register button:hover {
+  color: #9526a9;
+  background-color: #fff;
+}
+
+.register .arrow-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* Поля ввода */
+.input-group {
+  margin-bottom: 30px;
+}
+
+.input-with-icon {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  padding: 10px;
+  border-radius: 15px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+}
+
+.input-with-icon:focus-within {
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.input-wrapper {
+  position: relative;
+  flex: 1;
+  margin-left: 10px;
+}
+
+.input-wrapper input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  padding: 10px 0;
+  transition: all 0.3s ease;
+}
+
+.input-wrapper label {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  font-size: 16px;
+  color: #888;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.input-wrapper input:focus + label,
+.input-wrapper input.filled + label,
+.input-wrapper .filled {
+  top: -10px;
+  font-size: 12px;
+  color: #9526a9;
+}
+
+.input-icon {
+  width: 20px;
+  height: 20px;
+  color: #888;
+}
+
+.password-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Кнопка отправки формы */
+button[type="submit"] {
+  width: 100%;
+  padding: 10px;
+  margin: 30px 0;
+  border: none;
+  background-color: #ffad32;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  transition: 0.3s all ease-in-out;
+  border-radius: 15px;
+}
+
+button[type="submit"]:hover {
+  width: 97%;
+  font-size: 22px;
+  border-radius: 15px;
+}
+
+button.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Переключатели Email/Телефон */
+.toggle-buttons {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 30px;
+}
+
+.toggle-buttons button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: #eeeeef;
+  cursor: pointer;
+  transition: 0.3s;
+  font-size: 16px;
+  border-radius: 15px;
+}
+
+.toggle-buttons button.active {
+  background: #000000;
+  color: #fff;
+  font-weight: bold;
+  border-radius: 15px;
+}
+
+/* Чекбоксы */
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  margin-bottom: 30px;
+  position: relative;
+}
+
+.checkbox-group input {
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  float: left;
+}
+
+.checkbox-group span {
+  float: left;
+  font-size: 14px;
+}
+
+.checkbox-group label {
+  font-size: 14px;
+}
+
+.checkbox-group a {
+  color: #000;
+  text-decoration: none;
+}
+
+.checkbox-group a:hover {
+  color: #9526a9;
+  font-weight: bold;
+}
+
+/* Ссылка "Забыли пароль?" */
+.forgot-password {
+  font-size: 14px;
+  color: #000;
+  text-decoration: none;
+  transition: 0.3s all ease-in-out;
+  margin-left: auto;
+  margin-right: 30px;
+  display: block;
+}
+
+/* Социальные сети */
+.connect-with {
+  margin: 30px 0;
+  text-align: center;
+}
+
+.connect-with hr {
+  width: 30%;
+  display: inline-block;
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 0 10px;
+}
+
+.connect-with p {
+  display: inline-block;
+  margin: 0 10px;
+  font-size: 14px;
+}
+
+.connect-with ul {
+  list-style: none;
+  margin: 40px 0;
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+}
+
+.connect-with button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.connect-with .social-icon {
+  width: 48px;
+  height: 48px;
+  object-fit: contain; /* Для корректного отображения PNG */
+}
+
+.connect-with button:hover .social-icon {
+  opacity: 0.6;
+}
+
+.connect-with button.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Спиннер */
+.spinner {
+  border: 3px solid #ddd;
+  border-top: 3px solid #000000;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  animation: spin 0.8s linear infinite;
+  margin: auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Авторские права */
+.copyright {
+  display: inline-block;
+  font-size: 14px;
+  color: #000;
+}
+
+/* Адаптивность */
+@media (max-width: 800px) {
+  .login, .register {
+    width: 100%;
+    flex: none;
+    border-radius: 0;
+    padding: 40px 20px;
+  }
+  .login {
+    border-radius: 10px 10px 0 0;
+  }
+  .register {
+    border-radius: 0 0 10px 10px;
+  }
+  .register h2 {
+    font-size: 30px;
+  }
+  .register .register-icon {
+    width: 48px;
+    height: 48px;
+  }
+  .connect-with .social-icon {
+    width: 36px;
+    height: 36px;
+  }
+}
