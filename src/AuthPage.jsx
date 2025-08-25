@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import toast, { Toaster } from "react-hot-toast";
 import { FaVk } from "react-icons/fa";
 import {
@@ -24,6 +24,7 @@ const AuthPage = () => {
   const [isChecked, setIsChecked] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const realm = "default";
 
   useEffect(() => {
@@ -33,8 +34,143 @@ const AuthPage = () => {
     if (isAuthenticated) {
       console.log("[AuthPage] Пользователь уже авторизован, перенаправляем на /");
       navigate("/", { replace: true });
+      return;
     }
-  }, [navigate]);
+
+    // Временная обработка callback на /auth
+    const code = searchParams.get("code");
+    const state = searchParams.get("state");
+    const cid = searchParams.get("cid");
+    console.log("[AuthPage] Проверка OAuth callback, параметры:", {
+      code,
+      state,
+      cid,
+      fullUrl: window.location.href,
+      searchParams: Object.fromEntries(searchParams),
+    });
+
+    if (code && state) {
+      console.log("[AuthPage] Найдены параметры code и state, запускаем handleOAuthCallback");
+      handleOAuthCallback(code, state, cid);
+    } else if (code || state || cid) {
+      console.warn("[AuthPage] Неполные параметры OAuth, перенаправляем на /auth");
+      navigate("/auth", { replace: true });
+    }
+  }, [navigate, searchParams]);
+
+  const handleOAuthCallback = async (code, stateParam, cid) => {
+    console.log("[AuthPage] Начало обработки OAuth callback:", {
+      code,
+      state: stateParam,
+      cid,
+      fullUrl: window.location.href,
+    });
+
+    let provider = cid ? "yandex" : "vk";
+    let sessionId = localStorage.getItem(`${provider}_session_id`) || Date.now().toString();
+    let action = localStorage.getItem(`${provider}_action`) || "login";
+
+    try {
+      const stateObj = JSON.parse(stateParam);
+      provider = stateObj.provider || provider;
+      sessionId = stateObj.sessionId || sessionId;
+      action = stateObj.action || action;
+      console.log("[AuthPage] Данные из state:", { provider, sessionId, action });
+    } catch (error) {
+      console.warn("[AuthPage] Ошибка парсинга state:", error.message);
+    }
+
+    const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
+    setLoading(true);
+    console.log("[AuthPage] Установлен loading для", provider, ":", true);
+
+    try {
+      const tokenEndpoint = `/api/v1/${realm}/${provider}/${action === "login" ? "authentication" : "registration"}`;
+      const requestBody = {
+        code,
+        state: stateParam,
+        ...(provider === "yandex" && cid && { session_id: cid }),
+      };
+
+      console.log("[AuthPage] Запрос на получение токена:", {
+        url: `${process.env.REACT_APP_DOMAIN_REGISTRATION}${tokenEndpoint}`,
+        body: requestBody,
+      });
+
+      const response = await fetch(
+        `${process.env.REACT_APP_DOMAIN_REGISTRATION}${tokenEndpoint}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+          credentials: "include",
+        }
+      );
+
+      console.log("[AuthPage] Ответ на запрос токена, статус:", response.status);
+      if (!response.ok) {
+        let errorText = await response.text();
+        console.error("[AuthPage] Ошибка сервера при получении токена:", errorText, "Статус:", response.status);
+        try {
+          const errorData = JSON.parse(errorText);
+          toast.error(errorData.message || `Ошибка OAuth для ${provider} (статус: ${response.status})`);
+        } catch {
+          toast.error(`Ошибка сервера: ${response.status} ${response.statusText}. Проверьте бэкенд.`);
+        }
+        navigate("/auth", { replace: true });
+        return;
+      }
+
+      const data = await response.json();
+      console.log("[AuthPage] Успешный ответ с токенами:", data);
+
+      const { access_token, refresh_token, expires_at, session_id } = data;
+
+      if (typeof access_token !== "string" || typeof refresh_token !== "string") {
+        console.error("[AuthPage] Некорректные токены:", { access_token, refresh_token });
+        toast.error("Некорректные токены.");
+        navigate("/auth", { replace: true });
+        return;
+      }
+
+      localStorage.setItem("access_token", access_token);
+      localStorage.setItem("refresh_token", refresh_token);
+      localStorage.setItem("expires_at", expires_at || "");
+      localStorage.setItem("session_id", session_id || "");
+
+      console.log("[AuthPage] Токены сохранены в localStorage:", {
+        access_token,
+        refresh_token,
+        expires_at,
+        session_id,
+      });
+
+      toast.success(`Вход через ${provider === "vk" ? "ВКонтакте" : "Яндекс"} успешен!`);
+
+      localStorage.removeItem(`${provider}_session_id`);
+      localStorage.removeItem(`${provider}_action`);
+      localStorage.removeItem(`${provider}_state`);
+      console.log("[AuthPage] Очищены временные данные из localStorage");
+
+      window.history.replaceState({}, document.title, "/auth");
+      console.log("[AuthPage] История браузера очищена");
+
+      try {
+        navigate("/", { replace: true });
+        console.log("[AuthPage] Перенаправление на главную страницу выполнено");
+      } catch (error) {
+        console.error("[AuthPage] Ошибка при перенаправлении:", error.message, error.stack);
+        toast.error("Ошибка при перенаправлении на главную страницу.");
+      }
+    } catch (error) {
+      console.error("[AuthPage] Ошибка в OAuth callback:", error.message, error.stack);
+      toast.error(`Ошибка сети для ${provider}. Убедитесь, что бэкенд запущен.`);
+      navigate("/auth", { replace: true });
+    } finally {
+      setLoading(false);
+      console.log("[AuthPage] Завершение обработки OAuth callback, loading для", provider, ":", false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
