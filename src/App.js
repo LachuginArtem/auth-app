@@ -1,19 +1,20 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import AuthPage from "./AuthPage";
 import HomePage from "./HomePage";
-import OAuthCallback from "./OAuthCallback"; // импортируем callback
+import OAuthCallback from "./OAuthCallback";
 import "./common.css";
 
 function ProtectedRoute({ children }) {
   const isAuthenticated = !!localStorage.getItem("access_token");
-  return isAuthenticated ? children : <Navigate to="/auth" replace />;
+  const [searchParams] = useSearchParams();
+  const navigateTo = searchParams.size > 0 ? `/auth?${searchParams.toString()}` : "/auth";
+  return isAuthenticated ? children : <Navigate to={navigateTo} replace />;
 }
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* страница авторизации */}
         <Route
           path="/auth"
           element={
@@ -22,8 +23,6 @@ function App() {
             </div>
           }
         />
-
-        {/* домашняя страница */}
         <Route
           path="/"
           element={
@@ -34,14 +33,10 @@ function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* роут для OAuth callback */}
         <Route
           path="/oauth/:provider/callback"
           element={<OAuthCallback />}
         />
-
-        {/* редирект на /auth для неизвестных роутов */}
         <Route path="*" element={<Navigate to="/auth" replace />} />
       </Routes>
     </BrowserRouter>
