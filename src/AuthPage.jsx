@@ -34,8 +34,16 @@ const AuthPage = () => {
     if (isAuthenticated) {
       console.log("[AuthPage] Пользователь уже авторизован, перенаправляем на /");
       navigate("/", { replace: true });
+    } else {
+      const code = searchParams.get("code");
+      const state = searchParams.get("state");
+      const cid = searchParams.get("cid");
+      if (code && state) {
+        console.log("[AuthPage] Обработка OAuth callback с параметрами:", { code, state, cid });
+        handleOAuthCallback(code, state, cid);
+      }
     }
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   const handleOAuthCallback = async (code, stateParam, cid) => {
     console.log("[AuthPage] Начало обработки OAuth callback:", {
@@ -46,36 +54,39 @@ const AuthPage = () => {
     });
 
     let provider = cid ? "yandex" : "vk";
+    console.log("[AuthPage] Определён provider:", provider);
+
     let sessionId = localStorage.getItem(`${provider}_session_id`) || Date.now().toString();
     let action = localStorage.getItem(`${provider}_action`) || "login";
     let savedState = localStorage.getItem(`${provider}_state`);
+    let savedStateData = localStorage.getItem(`${provider}_state_data`);
 
-    // Проверяем, совпадает ли state с сохранённым
+    console.log("[AuthPage] Извлечены данные из localStorage:", {
+      sessionId,
+      action,
+      savedState,
+      savedStateData,
+    });
+
+    if (stateParam !== savedState) {
+      console.error("[AuthPage] State mismatch:", { received: stateParam, expected: savedState });
+      toast.error("Ошибка: Неверный state параметр.");
+      navigate("/auth", { replace: true });
+      return;
+    }
+
     let stateObj = {};
     try {
-      stateObj = JSON.parse(savedState); // Парсим сохранённый state из localStorage
-      console.log("[AuthPage] Успешный парсинг savedState:", stateObj);
-      if (stateParam !== stateObj.stateId && stateParam !== savedState) {
-        console.error("[AuthPage] State mismatch:", { received: stateParam, expected: savedState });
-        toast.error("Ошибка: Неверный state параметр.");
-        navigate("/auth", { replace: true });
-        return;
-      }
+      stateObj = JSON.parse(savedStateData);
+      console.log("[AuthPage] Успешный парсинг savedStateData:", stateObj);
     } catch (error) {
-      console.warn("[AuthPage] Ошибка парсинга сохранённого state:", error.message);
-      // Если state не JSON, используем его как строку
-      if (stateParam !== savedState) {
-        console.error("[AuthPage] State mismatch:", { received: stateParam, expected: savedState });
-        toast.error("Ошибка: Неверный state параметр.");
-        navigate("/auth", { replace: true });
-        return;
-      }
+      console.warn("[AuthPage] Ошибка парсинга сохранённого stateData:", error.message);
     }
 
     provider = stateObj.provider || provider;
     sessionId = stateObj.sessionId || sessionId;
     action = stateObj.action || action;
-    console.log("[AuthPage] Данные из state:", { provider, sessionId, action });
+    console.log("[AuthPage] Данные из stateObj после корректировки:", { provider, sessionId, action });
 
     const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
     setLoading(true);
@@ -105,20 +116,25 @@ const AuthPage = () => {
       );
 
       console.log("[AuthPage] Ответ на запрос токена, статус:", response.status);
+
+      let responseBody;
+      try {
+        responseBody = await response.json();
+        console.log("[AuthPage] Полный ответ сервера (JSON):", responseBody);
+      } catch (jsonError) {
+        responseBody = await response.text();
+        console.log("[AuthPage] Полный ответ сервера (text):", responseBody);
+      }
+
       if (!response.ok) {
-        let errorText = await response.text();
-        console.error("[AuthPage] Ошибка сервера при получении токена:", errorText, "Статус:", response.status);
-        try {
-          const errorData = JSON.parse(errorText);
-          toast.error(errorData.message || `Ошибка OAuth для ${provider} (статус: ${response.status})`);
-        } catch {
-          toast.error(`Ошибка сервера: ${response.status} ${response.statusText}. Проверьте бэкенд.`);
-        }
+        console.error("[AuthPage] Ошибка сервера при получении токена:", responseBody, "Статус:", response.status);
+        const errorMessage = (typeof responseBody === 'object' && responseBody.message) || responseBody || `Ошибка OAuth для ${provider} (статус: ${response.status})`;
+        toast.error(errorMessage);
         navigate("/auth", { replace: true });
         return;
       }
 
-      const data = await response.json();
+      const data = responseBody;
       console.log("[AuthPage] Успешный ответ с токенами:", data);
 
       const { access_token, refresh_token, expires_at, session_id } = data;
@@ -147,6 +163,7 @@ const AuthPage = () => {
       localStorage.removeItem(`${provider}_session_id`);
       localStorage.removeItem(`${provider}_action`);
       localStorage.removeItem(`${provider}_state`);
+      localStorage.removeItem(`${provider}_state_data`);
       console.log("[AuthPage] Очищены временные данные из localStorage");
 
       window.history.replaceState({}, document.title, "/auth");
@@ -291,13 +308,20 @@ const AuthPage = () => {
       const data = await response.json();
       console.log("[AuthPage] Ответ сервера с OAuth URL:", data);
       if (typeof data === "string") {
+        // Парсим state из полученного OAuth URL (сервер может генерировать свой state)
+        const oauthUrl = new URL(data);
+        const serverState = oauthUrl.searchParams.get('state');
+        console.log("[AuthPage] Извлечён serverState из OAuth URL:", serverState);
+
         localStorage.setItem(`${provider}_session_id`, sessionId);
         localStorage.setItem(`${provider}_action`, isLogin ? "login" : "register");
-        localStorage.setItem(`${provider}_state`, state);
+        localStorage.setItem(`${provider}_state`, serverState); // Сохраняем state от сервера (строка)
+        localStorage.setItem(`${provider}_state_data`, state); // Сохраняем оригинальные данные stateData как JSON
         console.log("[AuthPage] Сохранены данные в localStorage:", {
           [`${provider}_session_id`]: sessionId,
           [`${provider}_action`]: isLogin ? "login" : "register",
-          [`${provider}_state`]: state,
+          [`${provider}_state`]: serverState,
+          [`${provider}_state_data`]: state,
         });
         console.log("[AuthPage] Перенаправление на OAuth URL:", data);
         window.location.href = data;
