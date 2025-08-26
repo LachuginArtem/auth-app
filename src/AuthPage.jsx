@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast, { Toaster } from "react-hot-toast";
 import { FaVk } from "react-icons/fa";
@@ -26,6 +26,7 @@ const AuthPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const realm = "default";
+  const hasProcessedCallback = useRef(false); // Флаг для предотвращения двойного вызова
 
   useEffect(() => {
     console.log("[AuthPage] Компонент смонтирован, URL:", window.location.href);
@@ -34,12 +35,13 @@ const AuthPage = () => {
     if (isAuthenticated) {
       console.log("[AuthPage] Пользователь уже авторизован, перенаправляем на /");
       navigate("/", { replace: true });
-    } else {
+    } else if (!hasProcessedCallback.current) {
       const code = searchParams.get("code");
       const state = searchParams.get("state");
       const cid = searchParams.get("cid");
       if (code && state) {
         console.log("[AuthPage] Обработка OAuth callback с параметрами:", { code, state, cid });
+        hasProcessedCallback.current = true; // Устанавливаем флаг
         handleOAuthCallback(code, state, cid);
       }
     }
@@ -178,7 +180,11 @@ const AuthPage = () => {
       }
     } catch (error) {
       console.error("[AuthPage] Ошибка в OAuth callback:", error.message, error.stack);
-      toast.error(`Ошибка сети для ${provider}. Убедитесь, что бэкенд запущен.`);
+      if (error.message.includes("Failed to fetch")) {
+        toast.error(`Ошибка сети: Не удалось подключиться к серверу. Проверьте, что бэкенд доступен по адресу ${process.env.REACT_APP_DOMAIN_REGISTRATION}.`);
+      } else {
+        toast.error(`Ошибка сети для ${provider}. Убедитесь, что бэкенд запущен.`);
+      }
       navigate("/auth", { replace: true });
     } finally {
       setLoading(false);
@@ -256,11 +262,15 @@ const AuthPage = () => {
       }
     } catch (error) {
       console.error("[AuthPage] Ошибка при отправке формы:", error.message, error.stack);
-      toast.error(
-        isLogin
-          ? "Ошибка при вводе данных, проверьте данные."
-          : "Ошибка при регистрации. Попробуйте снова."
-      );
+      if (error.message.includes("Failed to fetch")) {
+        toast.error(`Ошибка сети: Не удалось подключиться к серверу. Проверьте, что бэкенд доступен по адресу ${process.env.REACT_APP_DOMAIN_REGISTRATION}.`);
+      } else {
+        toast.error(
+          isLogin
+            ? "Ошибка при вводе данных, проверьте данные."
+            : "Ошибка при регистрации. Попробуйте снова."
+        );
+      }
     } finally {
       setIsFormLoading(false);
       console.log("[AuthPage] Завершение обработки формы, isFormLoading:", false);
@@ -308,15 +318,14 @@ const AuthPage = () => {
       const data = await response.json();
       console.log("[AuthPage] Ответ сервера с OAuth URL:", data);
       if (typeof data === "string") {
-        // Парсим state из полученного OAuth URL (сервер может генерировать свой state)
         const oauthUrl = new URL(data);
         const serverState = oauthUrl.searchParams.get('state');
         console.log("[AuthPage] Извлечён serverState из OAuth URL:", serverState);
 
         localStorage.setItem(`${provider}_session_id`, sessionId);
         localStorage.setItem(`${provider}_action`, isLogin ? "login" : "register");
-        localStorage.setItem(`${provider}_state`, serverState); // Сохраняем state от сервера (строка)
-        localStorage.setItem(`${provider}_state_data`, state); // Сохраняем оригинальные данные stateData как JSON
+        localStorage.setItem(`${provider}_state`, serverState);
+        localStorage.setItem(`${provider}_state_data`, state);
         console.log("[AuthPage] Сохранены данные в localStorage:", {
           [`${provider}_session_id`]: sessionId,
           [`${provider}_action`]: isLogin ? "login" : "register",
@@ -331,7 +340,11 @@ const AuthPage = () => {
       }
     } catch (error) {
       console.error("[AuthPage] Ошибка при OAuth редиректе:", error.message, error.stack);
-      toast.error("Ошибка сети или сервера.");
+      if (error.message.includes("Failed to fetch")) {
+        toast.error(`Ошибка сети: Не удалось подключиться к серверу. Проверьте, что бэкенд доступен по адресу ${process.env.REACT_APP_DOMAIN_REGISTRATION}.`);
+      } else {
+        toast.error("Ошибка сети или сервера.");
+      }
     } finally {
       setLoading(false);
       console.log("[AuthPage] Завершение OAuth редиректа, loading для", provider, ":", false);
