@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import AuthPage from "./AuthPage";
 import HomePage from "./HomePage";
-import OAuthCallback from "./OAuthCallback";
 import "./common.css";
 
 function ProtectedRoute({ children }) {
@@ -33,11 +32,6 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/oauth/:provider/callback"
-          element={<OAuthCallback />}
-        />
-        <Route path="*" element={<Navigate to="/auth" replace />} />
       </Routes>
     </BrowserRouter>
   );
