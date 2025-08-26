@@ -1,17 +1,19 @@
 import { useEffect } from "react";
 import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
+import { useUser } from "./UserContext"; // Убедитесь, что путь правильный
 
 const OAuthCallback = ({ isLogin = true, realm = "default" }) => {
   const [searchParams] = useSearchParams();
   const { provider } = useParams();
   const navigate = useNavigate();
+  const { login } = useUser();
 
   useEffect(() => {
     console.log("[OAuthCallback] Компонент смонтирован, URL:", window.location.href);
     const code = searchParams.get("code");
     const state = searchParams.get("state");
-    const cid = searchParams.get("cid"); // Для Яндекса
+    const cid = searchParams.get("cid");
 
     console.log("[OAuthCallback] Параметры URL:", {
       code,
@@ -31,6 +33,16 @@ const OAuthCallback = ({ isLogin = true, realm = "default" }) => {
     if (!provider || !["vk", "yandex"].includes(provider)) {
       console.error("[OAuthCallback] Некорректный провайдер:", provider);
       toast.error("Провайдер не указан или некорректен");
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    // Проверка state
+    const savedState = localStorage.getItem(`${provider}_state`);
+    console.log("[OAuthCallback] Сохранённый state из localStorage:", savedState);
+    if (state !== savedState) {
+      console.error("[OAuthCallback] State mismatch:", { received: state, expected: savedState });
+      toast.error("Ошибка: Неверный state параметр.");
       navigate("/auth", { replace: true });
       return;
     }
@@ -69,7 +81,7 @@ const OAuthCallback = ({ isLogin = true, realm = "default" }) => {
         }
         return res.json();
       })
-      .then((data) => {
+      .then(async (data) => {
         console.log("[OAuthCallback] Успешный ответ сервера:", data);
         const { access_token, refresh_token, expires_at, session_id } = data;
         if (typeof access_token !== "string" || typeof refresh_token !== "string") {
@@ -78,17 +90,13 @@ const OAuthCallback = ({ isLogin = true, realm = "default" }) => {
           navigate("/auth", { replace: true });
           return;
         }
-        localStorage.setItem("access_token", access_token);
-        localStorage.setItem("refresh_token", refresh_token);
-        localStorage.setItem("expires_at", expires_at || "");
-        localStorage.setItem("session_id", session_id || "");
-        console.log("[OAuthCallback] Токены сохранены в localStorage:", {
-          access_token,
-          refresh_token,
-          session_id,
-          expires_at,
-        });
+        await login(access_token, refresh_token, [], realm);
+        console.log("[OAuthCallback] Токены сохранены и пользователь авторизован через UserContext");
         toast.success(`Вход через ${provider === "vk" ? "ВКонтакте" : "Яндекс"} успешен`);
+        localStorage.removeItem(`${provider}_session_id`);
+        localStorage.removeItem(`${provider}_action`);
+        localStorage.removeItem(`${provider}_state`);
+        console.log("[OAuthCallback] Очищены временные данные из localStorage");
         navigate("/", { replace: true });
         console.log("[OAuthCallback] Перенаправление на главную страницу выполнено");
       })
@@ -97,7 +105,7 @@ const OAuthCallback = ({ isLogin = true, realm = "default" }) => {
         toast.error(`Ошибка авторизации через ${provider}`);
         navigate("/auth", { replace: true });
       });
-  }, [provider, searchParams, navigate, isLogin, realm]);
+  }, [provider, searchParams, navigate, isLogin, realm, login]);
 
   console.log("[OAuthCallback] Рендеринг, провайдер:", provider);
   return (

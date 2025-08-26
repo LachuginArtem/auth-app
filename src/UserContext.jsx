@@ -16,6 +16,8 @@ export const UserProvider = ({ children }) => {
       localStorage.setItem("scopes", JSON.stringify(scopes));
       localStorage.setItem("realm", realm);
 
+      console.log("[UserContext] Запрос на introspect токена, realm:", realm, "access_token:", access.substring(0, 10) + "...");
+
       // Проверяем токен через introspect
       const introspectResponse = await fetch(
         `${process.env.REACT_APP_DOMAIN_REGISTRATION}/api/v1/${realm}/auth/introspect`,
@@ -29,12 +31,17 @@ export const UserProvider = ({ children }) => {
         }
       );
 
+      console.log("[UserContext] Ответ introspect, статус:", introspectResponse.status);
       if (!introspectResponse.ok) {
+        const errorData = await introspectResponse.json();
+        console.error("[UserContext] Ошибка introspect:", errorData);
         throw new Error("Не удалось проверить токен");
       }
 
       const userData = await introspectResponse.json();
+      console.log("[UserContext] Данные из introspect:", userData);
       if (!userData.active) {
+        console.error("[UserContext] Токен неактивен, причина:", userData.cause);
         throw new Error(userData.cause || "Токен недействителен");
       }
 
@@ -46,9 +53,10 @@ export const UserProvider = ({ children }) => {
       setTokens({ access, refresh });
       setScopes(scopes);
       setRealm(realm);
+      console.log("[UserContext] Пользователь успешно залогинен:", { email: userData.email, status: userData.status, roles: userData.roles });
       return true;
     } catch (error) {
-      console.error("[UserContext] Ошибка входа:", error.message);
+      console.error("[UserContext] Ошибка входа:", error.message, error.stack);
       toast.error("Ошибка авторизации");
       return false;
     }
@@ -62,6 +70,8 @@ export const UserProvider = ({ children }) => {
         throw new Error("Нет refresh токена или realm");
       }
 
+      console.log("[UserContext] Запрос на refresh токена, realm:", currentRealm, "refresh_token:", refresh.substring(0, 10) + "...");
+
       const response = await fetch(
         `${process.env.REACT_APP_DOMAIN_REGISTRATION}/api/v1/${currentRealm}/auth/refresh`,
         {
@@ -71,7 +81,10 @@ export const UserProvider = ({ children }) => {
         }
       );
 
+      console.log("[UserContext] Ответ refresh, статус:", response.status);
       if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[UserContext] Ошибка refresh:", errorData);
         throw new Error("Ошибка обновления токена");
       }
 
@@ -82,9 +95,10 @@ export const UserProvider = ({ children }) => {
       localStorage.setItem("scopes", JSON.stringify(scopes));
       setTokens({ access: access_token, refresh: refresh_token });
       setScopes(scopes);
+      console.log("[UserContext] Токены успешно обновлены");
       return true;
     } catch (error) {
-      console.error("[UserContext] Ошибка обновления токена:", error.message);
+      console.error("[UserContext] Ошибка обновления токена:", error.message, error.stack);
       toast.error("Сессия истекла. Пожалуйста, войдите снова.");
       logout();
       return false;
@@ -96,7 +110,8 @@ export const UserProvider = ({ children }) => {
       const access = localStorage.getItem("access_token");
       const currentRealm = localStorage.getItem("realm");
       if (access && currentRealm) {
-        await fetch(
+        console.log("[UserContext] Запрос на logout, realm:", currentRealm, "access_token:", access.substring(0, 10) + "...");
+        const response = await fetch(
           `${process.env.REACT_APP_DOMAIN_REGISTRATION}/api/v1/${currentRealm}/auth/logout`,
           {
             method: "POST",
@@ -105,9 +120,10 @@ export const UserProvider = ({ children }) => {
             },
           }
         );
+        console.log("[UserContext] Ответ logout, статус:", response.status);
       }
     } catch (error) {
-      console.error("[UserContext] Ошибка выхода:", error.message);
+      console.error("[UserContext] Ошибка выхода:", error.message, error.stack);
     } finally {
       setUser(null);
       setTokens({ access: null, refresh: null });
@@ -117,6 +133,7 @@ export const UserProvider = ({ children }) => {
       localStorage.removeItem("refresh_token");
       localStorage.removeItem("scopes");
       localStorage.removeItem("realm");
+      console.log("[UserContext] Пользователь успешно разлогинен, localStorage очищен");
     }
   };
 

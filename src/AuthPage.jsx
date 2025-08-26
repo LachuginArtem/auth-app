@@ -34,29 +34,8 @@ const AuthPage = () => {
     if (isAuthenticated) {
       console.log("[AuthPage] Пользователь уже авторизован, перенаправляем на /");
       navigate("/", { replace: true });
-      return;
     }
-
-    // Временная обработка callback на /auth
-    const code = searchParams.get("code");
-    const state = searchParams.get("state");
-    const cid = searchParams.get("cid");
-    console.log("[AuthPage] Проверка OAuth callback, параметры:", {
-      code,
-      state,
-      cid,
-      fullUrl: window.location.href,
-      searchParams: Object.fromEntries(searchParams),
-    });
-
-    if (code && state) {
-      console.log("[AuthPage] Найдены параметры code и state, запускаем handleOAuthCallback");
-      handleOAuthCallback(code, state, cid);
-    } else if (code || state || cid) {
-      console.warn("[AuthPage] Неполные параметры OAuth, перенаправляем на /auth");
-      navigate("/auth", { replace: true });
-    }
-  }, [navigate, searchParams]);
+  }, [navigate]);
 
   const handleOAuthCallback = async (code, stateParam, cid) => {
     console.log("[AuthPage] Начало обработки OAuth callback:", {
@@ -69,16 +48,34 @@ const AuthPage = () => {
     let provider = cid ? "yandex" : "vk";
     let sessionId = localStorage.getItem(`${provider}_session_id`) || Date.now().toString();
     let action = localStorage.getItem(`${provider}_action`) || "login";
+    let savedState = localStorage.getItem(`${provider}_state`);
 
+    // Проверяем, совпадает ли state с сохранённым
+    let stateObj = {};
     try {
-      const stateObj = JSON.parse(stateParam);
-      provider = stateObj.provider || provider;
-      sessionId = stateObj.sessionId || sessionId;
-      action = stateObj.action || action;
-      console.log("[AuthPage] Данные из state:", { provider, sessionId, action });
+      stateObj = JSON.parse(savedState); // Парсим сохранённый state из localStorage
+      console.log("[AuthPage] Успешный парсинг savedState:", stateObj);
+      if (stateParam !== stateObj.stateId && stateParam !== savedState) {
+        console.error("[AuthPage] State mismatch:", { received: stateParam, expected: savedState });
+        toast.error("Ошибка: Неверный state параметр.");
+        navigate("/auth", { replace: true });
+        return;
+      }
     } catch (error) {
-      console.warn("[AuthPage] Ошибка парсинга state:", error.message);
+      console.warn("[AuthPage] Ошибка парсинга сохранённого state:", error.message);
+      // Если state не JSON, используем его как строку
+      if (stateParam !== savedState) {
+        console.error("[AuthPage] State mismatch:", { received: stateParam, expected: savedState });
+        toast.error("Ошибка: Неверный state параметр.");
+        navigate("/auth", { replace: true });
+        return;
+      }
     }
+
+    provider = stateObj.provider || provider;
+    sessionId = stateObj.sessionId || sessionId;
+    action = stateObj.action || action;
+    console.log("[AuthPage] Данные из state:", { provider, sessionId, action });
 
     const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
     setLoading(true);
