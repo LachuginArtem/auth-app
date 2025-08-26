@@ -26,103 +26,101 @@ const AuthPage = () => {
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const handledRef = useRef(false); // ✅ предотвращаем повторный вызов
+  const handledRef = useRef(false);
 
   const realm = "default";
+  const API_BASE = process.env.REACT_APP_DOMAIN_REGISTRATION || "";
 
-  // 🔹 Проверка локальной авторизации
+  // Проверка локальной авторизации
   useEffect(() => {
     const isAuthenticated = !!localStorage.getItem("access_token");
-    if (isAuthenticated) {
-      navigate("/", { replace: true });
-    }
+    if (isAuthenticated) navigate("/", { replace: true });
   }, [navigate]);
 
-  // 🔹 Обработка OAuth callback (Яндекс / VK)
+  // Ловим ?code и обрабатываем только один раз
   useEffect(() => {
     const code = searchParams.get("code");
     const stateParam = searchParams.get("state");
 
     if (code && !handledRef.current) {
-      handledRef.current = true; // ✅ только один вызов
+      handledRef.current = true;
       handleOAuthCallback(code, stateParam);
     }
   }, [searchParams]);
 
-  // 🔹 Функция обработки OAuth callback
+  // Обработка OAuth callback
   const handleOAuthCallback = async (code, stateParam) => {
     try {
-      const savedState = localStorage.getItem("oauth_state");
-      if (!savedState) {
-        toast.error("Отсутствует сохранённый state.");
+      const savedStateRaw = localStorage.getItem("oauth_state");
+      if (!savedStateRaw) {
+        toast.error("Не найден сохранённый state.");
         navigate("/auth", { replace: true });
         return;
       }
 
-      const stateObj = JSON.parse(savedState);
+      let saved;
+      try {
+        saved = JSON.parse(savedStateRaw);
+      } catch {
+        toast.error("Повреждён сохранённый state.");
+        navigate("/auth", { replace: true });
+        return;
+      }
 
-      // проверка безопасности
-      if (stateParam !== stateObj.stateId) {
+      const { provider, action, stateId } = saved || {};
+      if (!provider || !action || !stateId) {
+        toast.error("Неполный сохранённый state.");
+        navigate("/auth", { replace: true });
+        return;
+      }
+
+      if (stateParam !== stateId) {
         toast.error("Ошибка: Неверный state параметр.");
         navigate("/auth", { replace: true });
         return;
       }
 
-      const { provider, action, sessionId } = stateObj;
-      const setLoading =
-        provider === "vk" ? setIsVkLoading : setIsYandexLoading;
+      const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
       setLoading(true);
 
-      const tokenEndpoint = `/api/v1/${realm}/${provider}/${
-        action === "login" ? "authentication" : "registration"
-      }`;
+      const tokenEndpoint = `/api/v1/${realm}/${provider}/${action === "login" ? "authentication" : "registration"}`;
+      const res = await fetch(`${API_BASE}${tokenEndpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // согласно твоему Swagger, для Яндекса нужны только { code, state }
+        body: JSON.stringify({ code, state: stateParam }),
+        credentials: "include",
+      });
 
-      const response = await fetch(
-        `${process.env.REACT_APP_DOMAIN_REGISTRATION}${tokenEndpoint}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, state: stateParam, session_id: sessionId }),
-          credentials: "include",
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        toast.error(`Ошибка OAuth (${provider}): ${errorText}`);
+      if (!res.ok) {
+        const text = await res.text();
+        toast.error(`Ошибка OAuth (${provider}): ${text || res.status}`);
         navigate("/auth", { replace: true });
         return;
       }
 
-      const data = await response.json();
-      const { access_token, refresh_token, expires_at, session_id } = data;
-
+      const data = await res.json();
+      const { access_token, refresh_token, expires_at, session_id } = data || {};
       if (!access_token || !refresh_token) {
         toast.error("Некорректные токены от сервера.");
         navigate("/auth", { replace: true });
         return;
       }
 
-      // Сохраняем токены
       localStorage.setItem("access_token", access_token);
       localStorage.setItem("refresh_token", refresh_token);
-      localStorage.setItem("expires_at", expires_at || "");
-      localStorage.setItem("session_id", session_id || "");
+      localStorage.setItem("expires_at", String(expires_at ?? ""));
+      localStorage.setItem("session_id", String(session_id ?? ""));
 
-      toast.success(
-        `Вход через ${provider === "vk" ? "ВКонтакте" : "Яндекс"} успешен!`
-      );
+      toast.success(`Вход через ${provider === "vk" ? "ВКонтакте" : "Яндекс"} успешен!`);
 
-      // чистим временные данные
+      // очистка временных данных и URL
       localStorage.removeItem("oauth_state");
-
-      // чистим URL от code/state
       window.history.replaceState({}, document.title, "/auth");
 
-      // редиректим на главную
       navigate("/", { replace: true });
-    } catch (error) {
-      console.error("[AuthPage] Ошибка в OAuth callback:", error.message);
+    } catch (e) {
+      console.error("[AuthPage] Ошибка в OAuth callback:", e);
       toast.error("Ошибка сети или сервера.");
       navigate("/auth", { replace: true });
     } finally {
@@ -131,36 +129,34 @@ const AuthPage = () => {
     }
   };
 
-  // 🔹 Сабмит формы (email + пароль)
+  // Сабмит формы (email + пароль)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsFormLoading(true);
 
     const body = { email, password };
-    const endpoint = isLogin
-      ? `/api/v1/${realm}/auth/login`
-      : `/api/v1/registration`;
+    const endpoint = isLogin ? `/api/v1/${realm}/auth/login` : `/api/v1/registration`;
 
     try {
-      const response = await fetch(
-        `${process.env.REACT_APP_DOMAIN_REGISTRATION}${endpoint}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          credentials: "include",
-        }
-      );
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        toast.error(errorData.message || "Ошибка входа.");
+      if (!res.ok) {
+        let msg = "Ошибка входа/регистрации.";
+        try {
+          const err = await res.json();
+          msg = err?.message || msg;
+        } catch {}
+        toast.error(msg);
         return;
       }
 
-      const data = await response.json();
-      const { access_token, refresh_token, expires_at, session_id } = data;
-
+      const data = await res.json();
+      const { access_token, refresh_token, expires_at, session_id } = data || {};
       if (!access_token || !refresh_token) {
         toast.error("Некорректные токены.");
         return;
@@ -168,8 +164,8 @@ const AuthPage = () => {
 
       localStorage.setItem("access_token", access_token);
       localStorage.setItem("refresh_token", refresh_token);
-      localStorage.setItem("expires_at", expires_at || "");
-      localStorage.setItem("session_id", session_id || "");
+      localStorage.setItem("expires_at", String(expires_at ?? ""));
+      localStorage.setItem("session_id", String(session_id ?? ""));
 
       toast.success(isLogin ? "Вход успешен!" : "Регистрация успешна!");
       navigate("/", { replace: true });
@@ -180,9 +176,9 @@ const AuthPage = () => {
     }
   };
 
-  // 🔹 Редирект на Яндекс / VK
+  // Редирект на OAuth провайдера
   const handleOAuthRedirect = async (provider) => {
-    if (!isChecked && !isLogin) {
+    if (!isLogin && !isChecked) {
       toast.error("Пожалуйста, согласитесь с обработкой персональных данных.");
       return;
     }
@@ -191,41 +187,61 @@ const AuthPage = () => {
     setLoading(true);
 
     try {
-      const stateData = {
-        stateId: Date.now().toString(),
-        action: isLogin ? "login" : "registration",
+      // сохраняем намерение (provider + action), но stateId возьмём из ответа сервера (из URL)
+      const draft = {
         provider,
-        sessionId: Date.now().toString(),
+        action: isLogin ? "login" : "registration",
+        stateId: null, // заполним после ответа
       };
 
-      localStorage.setItem("oauth_state", JSON.stringify(stateData));
-
       const redirectUri = `https://auth-app-v0pz.onrender.com/auth`;
-      const url = `${process.env.REACT_APP_DOMAIN_REGISTRATION}/api/v1/${provider}/link?state=${encodeURIComponent(
-        stateData.stateId
+      const linkUrl = `${API_BASE}/api/v1/${provider}/link?state=${encodeURIComponent(
+        String(Date.now())
       )}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
-      const response = await fetch(url, { method: "GET", credentials: "include" });
-      if (!response.ok) {
-        const errorData = await response.json();
-        toast.error(errorData.message || "Ошибка OAuth.");
+      const res = await fetch(linkUrl, { method: "GET", credentials: "include" });
+      if (!res.ok) {
+        let msg = "Ошибка OAuth.";
+        try {
+          const err = await res.json();
+          msg = err?.message || msg;
+        } catch {}
+        toast.error(msg);
         return;
       }
 
-      const data = await response.json();
-      if (typeof data === "string") {
-        window.location.href = data;
-      } else {
-        toast.error("Неверный формат ответа от сервера.");
+      const data = await res.json();
+      if (typeof data !== "string") {
+        toast.error("Неверный формат ответа от сервера (ожидалась строка URL).");
+        return;
       }
-    } catch {
+
+      // ВАЖНО: сервер сгенерировал свой state — вытащим его из ссылки
+      let serverState = null;
+      try {
+        const u = new URL(data);
+        serverState = u.searchParams.get("state");
+      } catch {
+        // если по какой-то причине не смогли распарсить URL
+      }
+
+      // сохраняем именно serverState, чтобы затем сравнить его на колбэке
+      localStorage.setItem(
+        "oauth_state",
+        JSON.stringify({ ...draft, stateId: serverState })
+      );
+
+      // уходим на страницу авторизации провайдера
+      window.location.href = data;
+    } catch (e) {
+      console.error("[AuthPage] Ошибка при OAuth редиректе:", e);
       toast.error("Ошибка сети или сервера.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 🔹 UI
+  // UI (оставил твою разметку)
   return (
     <div className="container">
       <Toaster position="top-right" />
@@ -270,11 +286,7 @@ const AuthPage = () => {
                   onClick={() => setShowPassword(!showPassword)}
                   className="password-toggle"
                 >
-                  {showPassword ? (
-                    <EyeSlashIcon className="input-icon" />
-                  ) : (
-                    <EyeIcon className="input-icon" />
-                  )}
+                  {showPassword ? <EyeSlashIcon className="input-icon" /> : <EyeIcon className="input-icon" />}
                 </button>
               </div>
             </div>
@@ -334,7 +346,9 @@ const AuthPage = () => {
                   className={isYandexLoading || (!isLogin && !isChecked) ? "disabled" : ""}
                   disabled={isYandexLoading || (!isLogin && !isChecked)}
                 >
-                  {isYandexLoading ? <div className="spinner"></div> : <img src={yandexLogo} alt="Yandex" className="social-icon" />}
+                  {isYandexLoading ? <div className="spinner"></div> : (
+                    <img src={yandexLogo} alt="Yandex" className="social-icon" />
+                  )}
                 </button>
               </li>
             </ul>
