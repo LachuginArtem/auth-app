@@ -3,496 +3,381 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import toast, { Toaster } from "react-hot-toast";
 import { FaVk } from "react-icons/fa";
 import {
-  EnvelopeIcon,
-  LockClosedIcon,
-  EyeIcon,
-  EyeSlashIcon,
-  UserIcon,
-  GlobeAltIcon,
+    EnvelopeIcon,
+    LockClosedIcon,
+    EyeIcon,
+    EyeSlashIcon,
+    UserIcon,
+    GlobeAltIcon,
 } from "@heroicons/react/24/outline";
+import { api, loginUser, registerUser, getOAuthUrl, handleOAuthAuthentication } from './services/apiService';
 import yandexLogo from "./assets/yandex-logo.png";
 import "./styles.css";
 
 const AuthPage = () => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isFormLoading, setIsFormLoading] = useState(false);
-  const [isVkLoading, setIsVkLoading] = useState(false);
-  const [isYandexLoading, setIsYandexLoading] = useState(false);
-  const [isChecked, setIsChecked] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const realm = "default";
-  const hasProcessedCallback = useRef(false); // Флаг для предотвращения двойного вызова
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
+    const [isFormLoading, setIsFormLoading] = useState(false);
+    const [isVkLoading, setIsVkLoading] = useState(false);
+    const [isYandexLoading, setIsYandexLoading] = useState(false);
+    const [isChecked, setIsChecked] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
 
-  useEffect(() => {
-    console.log("[AuthPage] Компонент смонтирован, URL:", window.location.href);
-    const isAuthenticated = !!localStorage.getItem("access_token");
-    console.log("[AuthPage] Проверка авторизации, isAuthenticated:", isAuthenticated);
-    if (isAuthenticated) {
-      console.log("[AuthPage] Пользователь уже авторизован, перенаправляем на /");
-      navigate("/", { replace: true });
-    } else if (!hasProcessedCallback.current) {
-      const code = searchParams.get("code");
-      const state = searchParams.get("state");
-      const cid = searchParams.get("cid");
-      if (code && state) {
-        console.log("[AuthPage] Обработка OAuth callback с параметрами:", { code, state, cid });
-        hasProcessedCallback.current = true; // Устанавливаем флаг
-        handleOAuthCallback(code, state, cid);
-      }
-    }
-  }, [navigate, searchParams]);
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const hasProcessedCallback = useRef(false);
 
-  const handleOAuthCallback = async (code, stateParam, cid) => {
-    console.log("[AuthPage] Начало обработки OAuth callback:", {
-      code,
-      state: stateParam,
-      cid,
-      fullUrl: window.location.href,
-    });
+    const realm = searchParams.get("realm") || "default";
+    const redirectUri = searchParams.get("redirect_uri");
 
-    let provider = cid ? "yandex" : "vk";
-    console.log("[AuthPage] Определён provider:", provider);
-
-    let sessionId = localStorage.getItem(`${provider}_session_id`) || Date.now().toString();
-    let action = localStorage.getItem(`${provider}_action`) || "login";
-    let savedState = localStorage.getItem(`${provider}_state`);
-    let savedStateData = localStorage.getItem(`${provider}_state_data`);
-
-    console.log("[AuthPage] Извлечены данные из localStorage:", {
-      sessionId,
-      action,
-      savedState,
-      savedStateData,
-    });
-
-    if (stateParam !== savedState) {
-      console.error("[AuthPage] State mismatch:", { received: stateParam, expected: savedState });
-      toast.error("Ошибка: Неверный state параметр.");
-      navigate("/auth", { replace: true });
-      return;
-    }
-
-    let stateObj = {};
-    try {
-      stateObj = JSON.parse(savedStateData);
-      console.log("[AuthPage] Успешный парсинг savedStateData:", stateObj);
-    } catch (error) {
-      console.warn("[AuthPage] Ошибка парсинга сохранённого stateData:", error.message);
-    }
-
-    provider = stateObj.provider || provider;
-    sessionId = stateObj.sessionId || sessionId;
-    action = stateObj.action || action;
-    console.log("[AuthPage] Данные из stateObj после корректировки:", { provider, sessionId, action });
-
-    const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
-    setLoading(true);
-    console.log("[AuthPage] Установлен loading для", provider, ":", true);
-
-    try {
-      const tokenEndpoint = `/api/v1/${realm}/${provider}/${action === "login" ? "authentication" : "registration"}`;
-      const requestBody = {
-        code,
-        state: stateParam,
-        ...(provider === "yandex" && cid && { session_id: cid }),
-      };
-
-      console.log("[AuthPage] Запрос на получение токена:", {
-        url: `${process.env.REACT_APP_DOMAIN_REGISTRATION}${tokenEndpoint}`,
-        body: requestBody,
-      });
-
-      const response = await fetch(
-        `${process.env.REACT_APP_DOMAIN_REGISTRATION}${tokenEndpoint}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-          credentials: "include",
-        }
-      );
-
-      console.log("[AuthPage] Ответ на запрос токена, статус:", response.status);
-
-      let responseBody;
-      try {
-        responseBody = await response.json();
-        console.log("[AuthPage] Полный ответ сервера (JSON):", responseBody);
-      } catch (jsonError) {
-        responseBody = await response.text();
-        console.log("[AuthPage] Полный ответ сервера (text):", responseBody);
-      }
-
-      if (!response.ok) {
-        console.error("[AuthPage] Ошибка сервера при получении токена:", responseBody, "Статус:", response.status);
-        const errorMessage = (typeof responseBody === 'object' && responseBody.message) || responseBody || `Ошибка OAuth для ${provider} (статус: ${response.status})`;
-        toast.error(errorMessage);
-        navigate("/auth", { replace: true });
-        return;
-      }
-
-      const data = responseBody;
-      console.log("[AuthPage] Успешный ответ с токенами:", data);
-
-      const { access_token, refresh_token, expires_at, session_id } = data;
-
-      if (typeof access_token !== "string" || typeof refresh_token !== "string") {
-        console.error("[AuthPage] Некорректные токены:", { access_token, refresh_token });
-        toast.error("Некорректные токены.");
-        navigate("/auth", { replace: true });
-        return;
-      }
-
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
-      localStorage.setItem("expires_at", expires_at || "");
-      localStorage.setItem("session_id", session_id || "");
-
-      console.log("[AuthPage] Токены сохранены в localStorage:", {
-        access_token,
-        refresh_token,
-        expires_at,
-        session_id,
-      });
-
-      toast.success(`Вход через ${provider === "vk" ? "ВКонтакте" : "Яндекс"} успешен!`);
-
-      localStorage.removeItem(`${provider}_session_id`);
-      localStorage.removeItem(`${provider}_action`);
-      localStorage.removeItem(`${provider}_state`);
-      localStorage.removeItem(`${provider}_state_data`);
-      console.log("[AuthPage] Очищены временные данные из localStorage");
-
-      window.history.replaceState({}, document.title, "/auth");
-      console.log("[AuthPage] История браузера очищена");
-
-      try {
-        navigate("/", { replace: true });
-        console.log("[AuthPage] Перенаправление на главную страницу выполнено");
-      } catch (error) {
-        console.error("[AuthPage] Ошибка при перенаправлении:", error.message, error.stack);
-        toast.error("Ошибка при перенаправлении на главную страницу.");
-      }
-    } catch (error) {
-      console.error("[AuthPage] Ошибка в OAuth callback:", error.message, error.stack);
-      if (error.message.includes("Failed to fetch")) {
-        toast.error(`Ошибка сети: Не удалось подключиться к серверу. Проверьте, что бэкенд доступен по адресу ${process.env.REACT_APP_DOMAIN_REGISTRATION}.`);
-      } else {
-        toast.error(`Ошибка сети для ${provider}. Убедитесь, что бэкенд запущен.`);
-      }
-      navigate("/auth", { replace: true });
-    } finally {
-      setLoading(false);
-      console.log("[AuthPage] Завершение обработки OAuth callback, loading для", provider, ":", false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsFormLoading(true);
-
-    const body = { email, password };
-    const endpoint = isLogin
-      ? `/api/v1/${realm}/auth/login`
-      : `/api/v1/registration`;
-
-    try {
-      console.log("[AuthPage] Запрос на:", `${process.env.REACT_APP_DOMAIN_REGISTRATION}${endpoint}`, "Тело:", body);
-      const response = await fetch(
-        `${process.env.REACT_APP_DOMAIN_REGISTRATION}${endpoint}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          credentials: "include",
-        }
-      );
-
-      console.log("[AuthPage] Ответ от сервера, статус:", response.status);
-      if (!response.ok) {
-        let errorData = {};
+    const isValidRedirectUrl = (url) => {
         try {
-          errorData = await response.json();
-          console.error("[AuthPage] Ошибка сервера, данные:", errorData, "Статус:", response.status);
-        } catch (err) {
-          console.error("[AuthPage] Не удалось разобрать ответ сервера:", err);
-          errorData = { message: "Ответ сервера не в формате JSON" };
+            new URL(url);
+            return true;
+        } catch (e) {
+            return false;
         }
-        if (response.status === 401) {
-          toast.error("Неверный email или пароль.");
-        } else if (response.status === 409 && !isLogin) {
-          toast.error("Пользователь с таким email уже зарегистрирован.");
-        } else if (response.status === 422) {
-          const details = errorData.detail?.map((err) => err.msg).join(", ") || "Ошибка валидации данных.";
-          toast.error(`Ошибка валидации: ${details}`);
-        } else if (response.status === 500) {
-          toast.error("Внутренняя ошибка сервера. Пожалуйста, попробуйте позже или обратитесь в поддержку.");
-        } else {
-          toast.error(errorData.message || "Ошибка сервера. Попробуйте снова.");
-        }
-        return;
-      }
+    };
 
-      const data = await response.json();
-      console.log("[AuthPage] Успешный ответ от сервера:", data);
-      if (isLogin) {
-        const { access_token, refresh_token, expires_at, session_id } = data;
-        if (typeof access_token !== "string" || typeof refresh_token !== "string") {
-          console.error("[AuthPage] Некорректные токены:", { access_token, refresh_token });
-          toast.error("Некорректные токены.");
-          return;
+    const handleRedirect = (url, access_token) => {
+        try {
+            if (!isValidRedirectUrl(url)) {
+                throw new Error("Invalid redirect URL");
+            }
+
+            // Создаем новый URL объект для редиректа
+            const redirectUrl = new URL(url);
+
+            // Проверяем, является ли URL внешним (другой домен или порт)
+            const isExternalRedirect =
+                redirectUrl.origin !== window.location.origin ||
+                redirectUrl.port !== window.location.port;
+
+            if (isExternalRedirect) {
+                // Для внешнего редиректа добавляем токен в URL
+                redirectUrl.searchParams.set('access_token', access_token);
+                console.log("[AuthPage] External redirect to:", redirectUrl.toString());
+                window.location.replace(redirectUrl.toString());
+            } else {
+                // Для внутреннего редиректа используем navigate
+                console.log("[AuthPage] Internal redirect to:", redirectUrl.pathname);
+                navigate(redirectUrl.pathname);
+            }
+        } catch (error) {
+            console.error("[AuthPage] Redirect error:", error);
+            toast.error("Ошибка при перенаправлении");
         }
+    };
+
+    useEffect(() => {
+        console.log("[AuthPage] Component mounted, URL:", window.location.href);
+        console.log("[AuthPage] Redirect URI:", redirectUri);
+        console.log("[AuthPage] Realm:", realm);
+
+        if (!hasProcessedCallback.current) {
+            const code = searchParams.get("code");
+            const state = searchParams.get("state");
+            const cid = searchParams.get("cid");
+
+            if (code && state) {
+                console.log("[AuthPage] Processing OAuth callback:", { code, state, cid });
+                hasProcessedCallback.current = true;
+                processOAuthCallback(code, state, cid);
+            }
+        }
+    }, [searchParams, redirectUri, realm]);
+
+    const handleTokens = (data) => {
+        const { access_token, refresh_token, expires_at, session_id } = data;
+
+        if (typeof access_token !== "string" || typeof refresh_token !== "string") {
+            console.error("[AuthPage] Invalid tokens:", { access_token, refresh_token });
+            throw new Error("Invalid tokens received");
+        }
+
         localStorage.setItem("access_token", access_token);
         localStorage.setItem("refresh_token", refresh_token);
         localStorage.setItem("expires_at", expires_at || "");
         localStorage.setItem("session_id", session_id || "");
-        console.log("[AuthPage] Токены сохранены в localStorage:", { access_token, refresh_token, expires_at, session_id });
-        toast.success("Вход выполнен успешно!");
-        navigate("/", { replace: true });
-      } else {
-        const { id, email, status, created_at } = data;
-        console.log("[AuthPage] Регистрация успешна, данные:", { id, email, status, created_at });
-        toast.success("Регистрация успешна!");
-        navigate("/", { replace: true });
-      }
-    } catch (error) {
-      console.error("[AuthPage] Ошибка при отправке формы:", error.message, error.stack);
-      if (error.message.includes("Failed to fetch")) {
-        toast.error(`Ошибка сети: Не удалось подключиться к серверу. Проверьте, что бэкенд доступен по адресу ${process.env.REACT_APP_DOMAIN_REGISTRATION}.`);
-      } else {
-        toast.error(
-          isLogin
-            ? "Ошибка при вводе данных, проверьте данные."
-            : "Ошибка при регистрации. Попробуйте снова."
-        );
-      }
-    } finally {
-      setIsFormLoading(false);
-      console.log("[AuthPage] Завершение обработки формы, isFormLoading:", false);
-    }
-  };
 
-  const handleOAuthRedirect = async (provider) => {
-    console.log("[AuthPage] Запуск OAuth редиректа для провайдера:", provider);
-    if (!isChecked && !isLogin) {
-      console.warn("[AuthPage] Чекбокс согласия не отмечен, редирект отменен");
-      toast.error("Пожалуйста, согласитесь с обработкой персональных данных.");
-      return;
-    }
-    const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
-    setLoading(true);
-    console.log("[AuthPage] Установлен loading для", provider, ":", true);
+        console.log("[AuthPage] Tokens saved to localStorage");
+        return access_token;
+    };
 
-    try {
-      const sessionId = Date.now().toString();
-      const stateData = {
-        sessionId,
-        action: isLogin ? "login" : "register",
-        provider,
-        timestamp: Date.now(),
-      };
-      const state = JSON.stringify(stateData);
-      console.log("[AuthPage] Сформирован state для OAuth:", state);
+    const clearOAuthState = (provider) => {
+        localStorage.removeItem(`${provider}_session_id`);
+        localStorage.removeItem(`${provider}_action`);
+        localStorage.removeItem(`${provider}_state`);
+        localStorage.removeItem(`${provider}_state_data`);
+        console.log("[AuthPage] Cleared OAuth state from localStorage for provider:", provider);
+    };
 
-      const redirectUri = `https://auth-app-v0pz.onrender.com/oauth/${provider}/callback`;
-      const url = `${process.env.REACT_APP_DOMAIN_REGISTRATION}/api/v1/${provider}/link?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-      console.log("[AuthPage] Запрос OAuth URL:", url);
-      const response = await fetch(url, {
-        method: "GET",
-        credentials: "include",
-      });
+    const processOAuthCallback = async (code, state, cid) => {
+        const provider = cid ? "yandex" : "vk";
+        const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
+        setLoading(true);
+        console.log("[AuthPage] Processing OAuth callback for provider:", provider);
 
-      console.log("[AuthPage] Ответ на запрос OAuth URL, статус:", response.status);
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("[AuthPage] Ошибка получения OAuth URL:", errorData, "Статус:", response.status);
-        toast.error(errorData.message || "Ошибка OAuth.");
-        return;
-      }
+        try {
+            const { data } = await handleOAuthAuthentication(code, state, cid, realm, provider);
+            console.log("[AuthPage] OAuth authentication successful:", data);
 
-      const data = await response.json();
-      console.log("[AuthPage] Ответ сервера с OAuth URL:", data);
-      if (typeof data === "string") {
-        const oauthUrl = new URL(data);
-        const serverState = oauthUrl.searchParams.get('state');
-        console.log("[AuthPage] Извлечён serverState из OAuth URL:", serverState);
+            const access_token = handleTokens(data);
+            toast.success(`Вход через ${provider === "vk" ? "ВКонтакте" : "Яндекс"} успешен!`);
 
-        localStorage.setItem(`${provider}_session_id`, sessionId);
-        localStorage.setItem(`${provider}_action`, isLogin ? "login" : "register");
-        localStorage.setItem(`${provider}_state`, serverState);
-        localStorage.setItem(`${provider}_state_data`, state);
-        console.log("[AuthPage] Сохранены данные в localStorage:", {
-          [`${provider}_session_id`]: sessionId,
-          [`${provider}_action`]: isLogin ? "login" : "register",
-          [`${provider}_state`]: serverState,
-          [`${provider}_state_data`]: state,
-        });
-        console.log("[AuthPage] Перенаправление на OAuth URL:", data);
-        window.location.href = data;
-      } else {
-        console.error("[AuthPage] Неверный формат ответа OAuth URL:", data);
-        toast.error("Ошибка: Неверный формат ответа от сервера.");
-      }
-    } catch (error) {
-      console.error("[AuthPage] Ошибка при OAuth редиректе:", error.message, error.stack);
-      if (error.message.includes("Failed to fetch")) {
-        toast.error(`Ошибка сети: Не удалось подключиться к серверу. Проверьте, что бэкенд доступен по адресу ${process.env.REACT_APP_DOMAIN_REGISTRATION}.`);
-      } else {
-        toast.error("Ошибка сети или сервера.");
-      }
-    } finally {
-      setLoading(false);
-      console.log("[AuthPage] Завершение OAuth редиректа, loading для", provider, ":", false);
-    }
-  };
+            clearOAuthState(provider);
 
-  console.log("[AuthPage] Рендеринг формы, isLogin:", isLogin);
-  return (
-    <div className="container">
-      <Toaster position="top-right" />
-      <div className="login">
-        <div className="inner-container">
-          <h1>{isLogin ? "Вход" : "Регистрация"}</h1>
-          <form onSubmit={handleSubmit}>
-            <div className="input-group">
-              <div className="input-with-icon">
-                <EnvelopeIcon className="input-icon" />
-                <div className="input-wrapper">
-                  <input
-                    required
-                    type="email"
-                    id="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                  <label htmlFor="email" className={email ? "filled" : ""}>
-                    Введите ваш email
-                  </label>
+            // Получаем сохраненный state и проверяем redirect_uri
+            const savedStateData = localStorage.getItem(`${provider}_state_data`);
+            let redirectTo;
+
+            try {
+                const stateData = JSON.parse(savedStateData);
+                redirectTo = stateData.redirect_uri;
+                console.log("[AuthPage] Parsed redirect URI from saved state:", redirectTo);
+            } catch (e) {
+                console.warn("[AuthPage] Could not parse saved state data:", e);
+            }
+
+            // Если есть redirect_uri в URL параметрах или в сохраненном state, используем его
+            const finalRedirectUri = redirectUri || redirectTo;
+
+            if (finalRedirectUri) {
+                handleRedirect(finalRedirectUri, access_token);
+            } else {
+                console.log("[AuthPage] No redirect URI found, staying on auth page");
+            }
+        } catch (error) {
+            console.error("[AuthPage] OAuth callback error:", error);
+            toast.error(error.response?.data?.message || "Ошибка при авторизации через OAuth");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setIsFormLoading(true);
+        console.log("[AuthPage] Form submitted, isLogin:", isLogin);
+
+        try {
+            const { data } = isLogin
+                ? await loginUser(email, password, realm)
+                : await registerUser(email, password);
+
+            console.log("[AuthPage] Authentication successful:", data);
+            const access_token = handleTokens(data);
+            toast.success(isLogin ? "Вход выполнен успешно!" : "Регистрация успешна!");
+
+            if (redirectUri) {
+                handleRedirect(redirectUri, access_token);
+            }
+        } catch (error) {
+            console.error("[AuthPage] Form submission error:", error);
+            if (error.response?.status === 401) {
+                toast.error("Неверный email или пароль");
+            } else if (error.response?.status === 409) {
+                toast.error("Пользователь с таким email уже существует");
+            } else {
+                toast.error(error.response?.data?.message || "Ошибка при аутентификации");
+            }
+        } finally {
+            setIsFormLoading(false);
+        }
+    };
+
+    const handleOAuthRedirect = async (provider) => {
+        if (!isChecked && !isLogin) {
+            toast.error("Пожалуйста, согласитесь с обработкой персональных данных");
+            return;
+        }
+
+        const setLoading = provider === "vk" ? setIsVkLoading : setIsYandexLoading;
+        setLoading(true);
+        console.log("[AuthPage] Initiating OAuth redirect for provider:", provider);
+
+        try {
+            const sessionId = Date.now().toString();
+            const stateData = {
+                sessionId,
+                action: isLogin ? "login" : "register",
+                provider,
+                timestamp: Date.now(),
+                redirect_uri: redirectUri // Сохраняем redirect_uri в state
+            };
+
+            const state = JSON.stringify(stateData);
+            console.log("[AuthPage] Generated OAuth state:", stateData);
+
+            const { data: oauthUrl } = await getOAuthUrl(provider, state, redirectUri);
+
+            if (typeof oauthUrl === "string") {
+                const parsedUrl = new URL(oauthUrl);
+                const serverState = parsedUrl.searchParams.get('state');
+                console.log("[AuthPage] Received OAuth URL:", oauthUrl);
+
+                // Сохраняем данные для последующей проверки
+                localStorage.setItem(`${provider}_session_id`, sessionId);
+                localStorage.setItem(`${provider}_action`, isLogin ? "login" : "register");
+                localStorage.setItem(`${provider}_state`, serverState);
+                localStorage.setItem(`${provider}_state_data`, state);
+
+                console.log("[AuthPage] Saved OAuth state to localStorage");
+                window.location.replace(oauthUrl);
+            } else {
+                throw new Error("Неверный формат URL для OAuth");
+            }
+        } catch (error) {
+            console.error("[AuthPage] OAuth redirect error:", error);
+            toast.error(error.response?.data?.message || "Ошибка при инициализации OAuth");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="container">
+            <Toaster position="top-right" />
+            <div className="login">
+                <div className="inner-container">
+                    <h1>{isLogin ? "Вход" : "Регистрация"}</h1>
+                    <form onSubmit={handleSubmit}>
+                        <div className="input-group">
+                            <div className="input-with-icon">
+                                <EnvelopeIcon className="input-icon" />
+                                <div className="input-wrapper">
+                                    <input
+                                        required
+                                        type="email"
+                                        id="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                    />
+                                    <label htmlFor="email" className={email ? "filled" : ""}>
+                                        Введите ваш email
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="input-group">
+                            <div className="input-with-icon">
+                                <LockClosedIcon className="input-icon" />
+                                <div className="input-wrapper">
+                                    <input
+                                        required
+                                        type={showPassword ? "text" : "password"}
+                                        id="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                    />
+                                    <label htmlFor="password" className={password ? "filled" : ""}>
+                                        Введите пароль
+                                    </label>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="password-toggle"
+                                >
+                                    {showPassword ? (
+                                        <EyeSlashIcon className="input-icon" />
+                                    ) : (
+                                        <EyeIcon className="input-icon" />
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                        {isLogin ? (
+                            <div className="checkbox-group">
+                                <input
+                                    id="remember-me"
+                                    type="checkbox"
+                                    checked={rememberMe}
+                                    onChange={() => setRememberMe(!rememberMe)}
+                                />
+                                <span>Запомнить меня</span>
+                                <a href="#" className="forgot-password">
+                                    Забыли пароль?
+                                </a>
+                            </div>
+                        ) : (
+                            <div className="checkbox-group">
+                                <input
+                                    required
+                                    id="agree"
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => setIsChecked(!isChecked)}
+                                />
+                                <label htmlFor="agree">
+                                    Я соглашаюсь с{" "}
+                                    <a href="/privacy-policy" target="_blank" rel="noopener noreferrer">
+                                        обработкой персональных данных
+                                    </a>
+                                </label>
+                            </div>
+                        )}
+                        <button
+                            type="submit"
+                            className={isFormLoading || (!isLogin && !isChecked) ? "disabled" : ""}
+                            disabled={isFormLoading || (!isLogin && !isChecked)}
+                        >
+                            {isFormLoading ? (
+                                <div className="spinner"></div>
+                            ) : isLogin ? (
+                                "Войти"
+                            ) : (
+                                "Зарегистрироваться"
+                            )}
+                        </button>
+                    </form>
+                    <div className="connect-with">
+                        <hr />
+                        <p>Или войдите через</p>
+                        <hr />
+                        <ul>
+                            <li>
+                                <button
+                                    onClick={() => handleOAuthRedirect("vk")}
+                                    className={isVkLoading || (!isLogin && !isChecked) ? "disabled" : ""}
+                                    disabled={isVkLoading || (!isLogin && !isChecked)}
+                                >
+                                    {isVkLoading ? <div className="spinner"></div> : <FaVk className="social-icon" />}
+                                </button>
+                            </li>
+                            <li>
+                                <button
+                                    onClick={() => handleOAuthRedirect("yandex")}
+                                    className={isYandexLoading || (!isLogin && !isChecked) ? "disabled" : ""}
+                                    disabled={isYandexLoading || (!isLogin && !isChecked)}
+                                >
+                                    {isYandexLoading ? <div className="spinner"></div> : <img src={yandexLogo} alt="Yandex" className="social-icon" />}
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div className="clearfix"></div>
+                    <span className="copyright">Политика конфиденциальности</span>
                 </div>
-              </div>
             </div>
-            <div className="input-group">
-              <div className="input-with-icon">
-                <LockClosedIcon className="input-icon" />
-                <div className="input-wrapper">
-                  <input
-                    required
-                    type={showPassword ? "text" : "password"}
-                    id="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <label htmlFor="password" className={password ? "filled" : ""}>
-                    Введите пароль
-                  </label>
+            <div className="register">
+                <div className="inner-container">
+                    <UserIcon className="register-icon" />
+                    <h2>Привет, друг!</h2>
+                    <p>
+                        {isLogin
+                            ? "Еще не зарегистрированы? Создайте аккаунт!"
+                            : "Уже есть аккаунт? Войдите!"}
+                    </p>
+                    <button onClick={() => setIsLogin(!isLogin)}>
+                        {isLogin ? "Зарегистрироваться" : "Войти"} <GlobeAltIcon className="arrow-icon" />
+                    </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="password-toggle"
-                >
-                  {showPassword ? (
-                    <EyeSlashIcon className="input-icon" />
-                  ) : (
-                    <EyeIcon className="input-icon" />
-                  )}
-                </button>
-              </div>
             </div>
-            {isLogin ? (
-              <div className="checkbox-group">
-                <input
-                  id="remember-me"
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={() => setRememberMe(!rememberMe)}
-                />
-                <span>Запомнить меня</span>
-                <a href="#" className="forgot-password">
-                  Забыли пароль?
-                </a>
-              </div>
-            ) : (
-              <div className="checkbox-group">
-                <input
-                  required
-                  id="agree"
-                  type="checkbox"
-                  checked={isChecked}
-                  onChange={() => setIsChecked(!isChecked)}
-                />
-                <label htmlFor="agree">
-                  Я соглашаюсь с{" "}
-                  <a href="/privacy-policy" target="_blank" rel="noopener noreferrer">
-                    обработкой персональных данных
-                  </a>
-                </label>
-              </div>
-            )}
-            <button
-              type="submit"
-              className={isFormLoading || (!isLogin && !isChecked) ? "disabled" : ""}
-              disabled={isFormLoading || (!isLogin && !isChecked)}
-            >
-              {isFormLoading ? (
-                <div className="spinner"></div>
-              ) : isLogin ? (
-                "Войти"
-              ) : (
-                "Зарегистрироваться"
-              )}
-            </button>
-          </form>
-          <div className="connect-with">
-            <hr />
-            <p>Или войдите через</p>
-            <hr />
-            <ul>
-              <li>
-                <button
-                  onClick={() => handleOAuthRedirect("vk")}
-                  className={isVkLoading || (!isLogin && !isChecked) ? "disabled" : ""}
-                  disabled={isVkLoading || (!isLogin && !isChecked)}
-                >
-                  {isVkLoading ? <div className="spinner"></div> : <FaVk className="social-icon" />}
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => handleOAuthRedirect("yandex")}
-                  className={isYandexLoading || (!isLogin && !isChecked) ? "disabled" : ""}
-                  disabled={isYandexLoading || (!isLogin && !isChecked)}
-                >
-                  {isYandexLoading ? <div className="spinner"></div> : <img src={yandexLogo} alt="Yandex" className="social-icon" />}
-                </button>
-              </li>
-            </ul>
-          </div>
-          <div className="clearfix"></div>
-          <span className="copyright">Политика конфиденциальности</span>
         </div>
-      </div>
-      <div className="register">
-        <div className="inner-container">
-          <UserIcon className="register-icon" />
-          <h2>Привет, друг!</h2>
-          <p>
-            {isLogin
-              ? "Еще не зарегистрированы? Создайте аккаунт!"
-              : "Уже есть аккаунт? Войдите!"}
-          </p>
-          <button onClick={() => setIsLogin(!isLogin)}>
-            {isLogin ? "Зарегистрироваться" : "Войти"} <GlobeAltIcon className="arrow-icon" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default AuthPage;
